@@ -1,4 +1,4 @@
-# 🖼️ Museum — BallsDex Package
+# 🖼️ Museum BallsDex Package
 
 It allows users to curate and display up to **three favourite cards** in a personal “museum” — a showcase others can browse through interactive embeds.
 
