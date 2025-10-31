@@ -124,7 +124,7 @@ class Exchange(commands.Cog):
             name="New Stats",
             value=f"ATK {atk_bonus:+d}% | HP {hp_bonus:+d}%",
         )
-        embed.set_footer(text="A fair trade... or was it?")
+        embed.set_footer(text="A fair trade?")
 
         if file:
             embed.set_image(url="attachment://card.png")
