@@ -1,17 +1,24 @@
-# 🎴 BallsDex Packages by Haymooed
+# 🧩 BallsDex Packages
 
-This repository contains standalone, plug-and-play **packages for the [BallsDex](https://github.com/Ballsdex-Team/BallsDex-DiscordBot/tree/master)** framework.  
-Each package adds new functionality or gameplay systems that can be easily integrated into any BallsDex-based bot.
+A collection of community-made **BallsDex packafes** that expand gameplay and add new mechanics, events, and collectible systems.
+
+Each package is modular, self-contained, and ready to drop into any BallsDex-based bot.
 
 ---
 
-## 🧩 Included Packages
+## 📦 Included Packages
 
-| Package | Description |
-|----------|-------------|
-| [`museum`](./museum) | Lets users display up to three favourite cards in a public “museum” with embed pagination. |
-| [`exchange`](./exchange) | Adds a secure trading system for card exchanges between users. |
+### 🎨 Museum (Not working)
+Display and manage player collections in beautiful, paginated embeds.  
+Perfect for curators, collectors, and event showcases.
 
-All packages are written for **Python 3.10+** and follow the BallsDex modular extension structure (`__init__.py`, `cog.py`, `LICENSE`).
+### 🔁 Exchange 
+Let players trade in one of their existing balls for a new, randomized one.  
+Balances rarity, prevents exploit loops, and includes cooldowns and fail-safes.
+
+### 🛍️ Merchant (Coming soon)
+A rotating in-game marketplace where users can spend special tokens on rare, time-limited balls.  
+Admin tools included for shop management and token adjustments.
+
 
 ---
