@@ -33,7 +33,7 @@ currency_name = "Tokens"
 min_rarity = 1
 max_rarity = 200
 admin_roles = [123456789012345678]  # Replace with your server's admin role IDs
-
+```
 ---
 
 ### To improve/bugs
