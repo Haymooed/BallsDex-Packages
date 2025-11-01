@@ -33,3 +33,12 @@ currency_name = "Tokens"
 min_rarity = 1
 max_rarity = 200
 admin_roles = [123456789012345678]  # Replace with your server's admin role IDs
+
+
+
+---
+### To improve/bugs
+- Other people can interact with `/merchant view` and buy from your merchant
+- Make embed smoother
+
+***If you want to help please open a pull request***
