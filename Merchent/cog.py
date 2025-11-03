@@ -1,100 +1,218 @@
 import discord
 import random
-import logging
+import tomllib
+import os
+import json
+import time
+
 from discord import app_commands
 from discord.ext import commands
-from tortoise.transactions import in_transaction
-
-from ballsdex.core.models import Player, Ball, BallInstance, TradeObject
-from ballsdex.core.utils.transformers import BallInstanceTransform
-from ballsdex.core.utils.buttons import ConfirmChoiceView
-
-log = logging.getLogger("ballsdex.packages.exchange")
+from ballsdex.core.models import Ball, balls
 
 
-@app_commands.guild_only()
-class Exchange(commands.Cog):
-    """Exchange one of your owned balls for a random new one."""
+CONFIG_PATH = "ballsdex/packages/merchant/config.toml"
+DATA_PATH = "ballsdex/packages/merchant/merchant_data.json"
+
+
+def load_config():
+    with open(CONFIG_PATH, "rb") as f:
+        return tomllib.load(f)
+
+
+def load_data():
+    if not os.path.exists(DATA_PATH):
+        with open(DATA_PATH, "w") as f:
+            json.dump({}, f)
+    with open(DATA_PATH, "r") as f:
+        return json.load(f)
+
+
+def save_data(data):
+    with open(DATA_PATH, "w") as f:
+        json.dump(data, f, indent=4)
+
+
+class Merchant(commands.GroupCog, group_name="merchant"):
+    """Merchant system for limited-time Market Balls."""
 
     def __init__(self, bot):
         self.bot = bot
-        self.cooldowns = {}
+        self.config = load_config()
+        self.shop_items = []
+        self.last_refresh = 0
+        self.refresh_shop()
 
-    @app_commands.command(name="exchange", description="Exchange one of your balls for a random new one.")
-    @app_commands.describe(countryball="Select a ball from your collection to exchange.")
-    async def exchange(self, interaction: discord.Interaction, countryball: BallInstanceTransform):
-        user_id = interaction.user.id
-        now = discord.utils.utcnow().timestamp()
+    def refresh_shop(self):
+        """Refreshes shop items daily based on rarity config."""
+        min_rarity = self.config.get("min_rarity", 1)
+        max_rarity = self.config.get("max_rarity", 200)
 
-        if user_id in self.cooldowns and now - self.cooldowns[user_id] < 30:
-            remaining = 30 - int(now - self.cooldowns[user_id])
+        available_balls = [
+            ball for ball in balls.values()
+            if ball.enabled and min_rarity <= ball.rarity <= max_rarity
+        ]
+
+        if not available_balls:
+            self.shop_items = []
+            return
+
+        self.shop_items = random.sample(available_balls, min(5, len(available_balls)))
+        self.last_refresh = time.time()
+
+    @app_commands.command(name="view", description="View the merchant's current items.")
+    async def view(self, interaction: discord.Interaction):
+        """Show available items and buttons to buy."""
+        currency = self.config.get("currency_name", "Market Tokens")
+
+        # Refresh every 24 hours
+        if time.time() - self.last_refresh > 86400:
+            self.refresh_shop()
+
+        if not self.shop_items:
             await interaction.response.send_message(
-                f"⏳ You can exchange again in {remaining}s.", ephemeral=True
+                "The merchant is resting right now. Check back later!"
             )
             return
-        self.cooldowns[user_id] = now
-
-        if not countryball:
-            await interaction.response.send_message("❌ That ball could not be found.", ephemeral=True)
-            return
-
-        player, _ = await Player.get_or_create(discord_id=user_id)
-        chosen = await BallInstance.get_or_none(id=countryball.id, player=player).prefetch_related("ball")
-        if not chosen:
-            await interaction.response.send_message("❌ You don't own that ball.", ephemeral=True)
-            return
-
-        confirm_view = ConfirmChoiceView(interaction)
-        await interaction.response.send_message(
-            f"Are you sure you want to exchange **{getattr(chosen.ball, 'country', getattr(chosen.ball, 'name', 'Unknown'))}**?",
-            view=confirm_view,
-        )
-        await confirm_view.wait()
-        if not confirm_view.value:
-            return
-
-        enabled_balls = await Ball.filter(enabled=True)
-        if not enabled_balls:
-            await interaction.followup.send("⚠️ No enabled balls found.")
-            return
-
-        new_ball = random.choice(enabled_balls)
-        atk_bonus = random.randint(-20, 20)
-        hp_bonus = random.randint(-20, 20)
-
-        try:
-            async with in_transaction():
-                await TradeObject.filter(ballinstance_id=chosen.id).delete()
-
-                await BallInstance.create(
-                    player=player,
-                    ball=new_ball,
-                    attack_bonus=atk_bonus,
-                    health_bonus=hp_bonus,
-                )
-
-                await chosen.delete()
-        except Exception as e:
-            log.error("Exchange failed", exc_info=e)
-            await interaction.followup.send(f"❌ Exchange failed: {e}")
-            return
-
-        old_name = getattr(chosen.ball, "country", getattr(chosen.ball, "name", "Unknown"))
-        new_name = getattr(new_ball, "country", getattr(new_ball, "name", "Unknown"))
-        emoji = self.bot.get_emoji(getattr(new_ball, "emoji_id", None)) or "🎲"
-
-        image_url = getattr(new_ball, "image_url", None) or getattr(new_ball, "image", None)
-        if not image_url and hasattr(new_ball, "card_url"):
-            image_url = new_ball.card_url
 
         embed = discord.Embed(
-            title="Exchange Complete!",
-            description=f"**{interaction.user.display_name}** exchanged **{old_name}** for {emoji} **{new_name}**!",
-            color=discord.Color.gold(),
+            title="🛍️ Merchant’s Market",
+            description=f"Spend your {currency} on exclusive Market Balls!\n"
+                        f"Shop refreshes every **24 hours**.",
+            color=discord.Color.gold()
         )
-        embed.add_field(name="New Stats", value=f"ATK {atk_bonus:+}% | HP {hp_bonus:+}%")
-        embed.set_footer(text="A fair trade... or was it?")
-        if image_url:
-            embed.set_image(url=image_url)
 
-        await interaction.followup.send(embed=embed)
+        view = discord.ui.View()
+        for ball in self.shop_items:
+            emoji = interaction.client.get_emoji(ball.emoji_id)
+            name = f"{emoji} {ball.country}" if emoji else ball.country
+
+            # Inverted rarity pricing: rarer = cheaper
+            max_rarity = 200
+            min_rarity = 1
+            max_price = 50  # T5 cost
+            min_price = 2   # T200 cost
+            price = int(min_price + (max_rarity - ball.rarity) * (max_price - min_price) / (max_rarity - min_rarity))
+
+            embed.add_field(
+                name=f"{name}",
+                value=f"Rarity: {ball.rarity}\n💰 **{price} {currency}**",
+                inline=False,
+            )
+
+            button = discord.ui.Button(label=f"Buy {ball.country}", style=discord.ButtonStyle.green)
+
+            async def buy_callback(inner_interaction, ball=ball, price=price):
+                data = load_data()
+                uid = str(inner_interaction.user.id)
+                balance = data.get(uid, {}).get("balance", 0)
+
+                if balance < price:
+                    await inner_interaction.response.send_message(
+                        f"❌ You need **{price - balance}** more {currency}!"
+                    )
+                    return
+
+                data.setdefault(uid, {"balance": 0, "last_claim": 0})
+                data[uid]["balance"] -= price
+                save_data(data)
+
+                emoji = inner_interaction.client.get_emoji(ball.emoji_id)
+                emoji_display = emoji if emoji else "🎁"
+                await inner_interaction.response.send_message(
+                    f"{emoji_display} {inner_interaction.user.mention} bought **{ball.country}** for **{price} {currency}**!"
+                )
+
+            button.callback = buy_callback
+            view.add_item(button)
+
+        await interaction.response.send_message(embed=embed, view=view)
+
+    @app_commands.command(name="balance", description="Check your Market Token balance.")
+    async def balance(self, interaction: discord.Interaction):
+        """Show user token balance and time until next daily."""
+        data = load_data()
+        user_id = str(interaction.user.id)
+        currency = self.config.get("currency_name", "Market Tokens")
+        user_data = data.get(user_id, {"balance": 0, "last_claim": 0})
+        balance = user_data.get("balance", 0)
+
+        now = time.time()
+        remaining = max(0, 86400 - (now - user_data.get("last_claim", 0)))
+        if remaining > 0:
+            hours = int(remaining // 3600)
+            minutes = int((remaining % 3600) // 60)
+            cooldown_text = f"Next daily in {hours}h {minutes}m"
+        else:
+            cooldown_text = "✅ Daily available now!"
+
+        embed = discord.Embed(
+            title=f"{interaction.user.display_name}'s Wallet",
+            description=f"💰 **{balance} {currency}**\n{cooldown_text}",
+            color=discord.Color.blurple()
+        )
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="daily", description="Claim your daily Market Tokens.")
+    async def daily(self, interaction: discord.Interaction):
+        """Users can claim daily tokens once every 24 hours."""
+        data = load_data()
+        user_id = str(interaction.user.id)
+        currency = self.config.get("currency_name", "Market Tokens")
+
+        now = time.time()
+        user_data = data.get(user_id, {"balance": 0, "last_claim": 0})
+        last_claim = user_data.get("last_claim", 0)
+
+        if now - last_claim < 86400:  # 24 hours
+            remaining = int(86400 - (now - last_claim))
+            hours = remaining // 3600
+            minutes = (remaining % 3600) // 60
+            await interaction.response.send_message(
+                f"🕓 {interaction.user.mention} can claim again in {hours}h {minutes}m."
+            )
+            return
+
+        reward = random.randint(3, 10)
+        user_data["balance"] += reward
+        user_data["last_claim"] = now
+        data[user_id] = user_data
+        save_data(data)
+
+        await interaction.response.send_message(
+            f"🎁 {interaction.user.mention} has claimed **{reward} {currency}**! Come back tomorrow for more."
+        )
+
+    @app_commands.command(name="give", description="Give Market Tokens to a user (Admin only).")
+    @app_commands.describe(user="User to give tokens to.", amount="How many tokens to give.")
+    async def give(self, interaction: discord.Interaction, user: discord.User, amount: int):
+        """Admin-only command to give tokens."""
+        config = self.config
+        admin_roles = config.get("admin_roles", [])
+        currency = config.get("currency_name", "Market Tokens")
+
+        if not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("❌ This command must be used in a server.", ephemeral=True)
+            return
+
+        if not any(role.id in admin_roles for role in interaction.user.roles):
+            await interaction.response.send_message("🚫 You don’t have permission to do that.", ephemeral=True)
+            return
+
+        data = load_data()
+        uid = str(user.id)
+        data.setdefault(uid, {"balance": 0, "last_claim": 0})
+        data[uid]["balance"] += amount
+        save_data(data)
+
+        await interaction.response.send_message(
+            f"✅ {interaction.user.mention} gave **{amount} {currency}** to {user.mention}!"
+        )
+
+        try:
+            await user.send(f"💰 You’ve received **{amount} {currency}** from an admin!")
+        except discord.Forbidden:
+            pass
+
+
+async def setup(bot):
+    await bot.add_cog(Merchant(bot))
