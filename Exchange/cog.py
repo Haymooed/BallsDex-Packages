@@ -5,7 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 from tortoise.transactions import in_transaction
 
-from ballsdex.core.models import Player, Ball, BallInstance
+from ballsdex.core.models import Player, Ball, BallInstance, TradeObject
 from ballsdex.core.utils.transformers import BallInstanceTransform
 from ballsdex.core.utils.buttons import ConfirmChoiceView
 
@@ -26,7 +26,6 @@ class Exchange(commands.Cog):
         user_id = interaction.user.id
         now = discord.utils.utcnow().timestamp()
 
-        # Cooldown: 30 seconds per user
         if user_id in self.cooldowns and now - self.cooldowns[user_id] < 30:
             remaining = 30 - int(now - self.cooldowns[user_id])
             await interaction.response.send_message(
@@ -65,12 +64,17 @@ class Exchange(commands.Cog):
 
         try:
             async with in_transaction():
-                new_instance = await BallInstance.create(
+                # remove any trade links referencing this ball
+                await TradeObject.filter(ballinstance_id=chosen.id).delete()
+
+                # create the new ball instance
+                await BallInstance.create(
                     player=player,
                     ball=new_ball,
                     attack_bonus=atk_bonus,
                     health_bonus=hp_bonus,
                 )
+
                 await chosen.delete()
         except Exception as e:
             log.error("Exchange failed", exc_info=e)
@@ -81,10 +85,13 @@ class Exchange(commands.Cog):
         new_name = getattr(new_ball, "country", getattr(new_ball, "name", "Unknown"))
         emoji = self.bot.get_emoji(getattr(new_ball, "emoji_id", None)) or "🎲"
 
-        # Try to show image if available
-        image_url = getattr(new_ball, "image_url", None) or getattr(new_ball, "image", None)
-        if not image_url and hasattr(new_ball, "card_url"):
-            image_url = new_ball.card_url
+        image_url = (
+            getattr(new_ball, "spawn_image", None)
+            or getattr(new_ball, "spawn_image_url", None)
+            or getattr(new_ball, "image_url", None)
+            or getattr(new_ball, "image", None)
+            or getattr(new_ball, "card_url", None)
+        )
 
         embed = discord.Embed(
             title="Exchange Complete!",
@@ -97,7 +104,3 @@ class Exchange(commands.Cog):
             embed.set_image(url=image_url)
 
         await interaction.followup.send(embed=embed)
-
-
-async def setup(bot):
-    await bot.add_cog(Exchange(bot))
