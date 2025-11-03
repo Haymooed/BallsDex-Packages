@@ -1,1 +1,7 @@
+[flex]
+# Channel where mod approvals happen
+mod_channel = 
+
+# Channel where approved flexes are posted
+public_channel = 
 
