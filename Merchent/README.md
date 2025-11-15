@@ -29,10 +29,21 @@ ballsdex/packages/merchant/
 
 3. **Add this to `config.toml`:**
 ```toml
-currency_name = "Tokens"
+# Currency used for purchases
+currency_name = "Market Tokens"
+
+# Minimum & maximum rarity allowed in the daily shop
 min_rarity = 1
 max_rarity = 200
-admin_roles = [123456789012345678]  # Replace with your server's admin role IDs
+
+# Role IDs allowed to use /merchant give and /merchant refresh
+admin_roles = [
+    123456789012345678
+]
+
+# Channel ID where all purchases are logged
+transaction_log_channel = 987654321098765432
+
 ```
 ---
 
