@@ -37,9 +37,7 @@ min_rarity = 1
 max_rarity = 200
 
 # Role IDs allowed to use /merchant give and /merchant refresh
-admin_roles = [
-    123456789012345678
-]
+admin_roles = [123456789012345678]
 
 # Channel ID where all purchases are logged
 transaction_log_channel = 987654321098765432
